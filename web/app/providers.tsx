@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { createContext, useContext, useEffect, useState } from "react";
 import { nhost } from "@/lib/nhost";
 
@@ -31,7 +32,7 @@ export function useApp() {
   return ctx;
 }
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
   const [orgs, setOrgs] = useState<OrgMembership[]>([]);
@@ -41,6 +42,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     const { MY_ORGS, gql } = await import("@/lib/graphql");
     const data = await gql<{ org_members: OrgMembership[] }>(MY_ORGS);
     setOrgs(data.org_members);
+
     if (!currentOrgId && data.org_members[0]) {
       setCurrentOrgId(data.org_members[0].organization.id);
     }
@@ -49,6 +51,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const unsubscribe = nhost.auth.onAuthStateChanged((event, session) => {
       const authed = event === "SIGNED_IN";
+
       setIsAuthenticated(authed);
       setUserId(session?.user?.id ?? null);
 
