@@ -5,7 +5,13 @@ import { nhost } from "@/lib/nhost";
 
 type OrgMembership = {
   role: "owner" | "editor" | "viewer";
-  organization: { id: string; name: string; quota_used: number; quota_limit: number; quota_period_start: string };
+  organization: {
+    id: string;
+    name: string;
+    quota_used: number;
+    quota_limit: number;
+    quota_period_start: string;
+  };
 };
 
 type AppState = {
@@ -35,25 +41,42 @@ export function Providers({ children }: { children: React.ReactNode }) {
     const { MY_ORGS, gql } = await import("@/lib/graphql");
     const data = await gql<{ org_members: OrgMembership[] }>(MY_ORGS);
     setOrgs(data.org_members);
-    if (!currentOrgId && data.org_members[0]) setCurrentOrgId(data.org_members[0].organization.id);
+    if (!currentOrgId && data.org_members[0]) {
+      setCurrentOrgId(data.org_members[0].organization.id);
+    }
   }
 
- useEffect(() => {
-  const unsubscribe = nhost.auth.onAuthStateChanged((event, session) => {
-    const authed = event === "SIGNED_IN";
+  useEffect(() => {
+    const unsubscribe = nhost.auth.onAuthStateChanged((event, session) => {
+      const authed = event === "SIGNED_IN";
+      setIsAuthenticated(authed);
+      setUserId(session?.user?.id ?? null);
 
-    setIsAuthenticated(authed);
-    setUserId(session?.user?.id ?? null);
+      if (authed) {
+        void refreshOrgs();
+      } else {
+        setOrgs([]);
+        setCurrentOrgId(null);
+      }
+    });
 
-    if (authed) {
-      void refreshOrgs();
-    } else {
-      setOrgs([]);
-      setCurrentOrgId(null);
-    }
-  });
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
-  return () => {
-    unsubscribe();
-  };
-}, []);
+  return (
+    <AppContext.Provider
+      value={{
+        isAuthenticated,
+        userId,
+        orgs,
+        currentOrgId,
+        setCurrentOrgId,
+        refreshOrgs,
+      }}
+    >
+      {children}
+    </AppContext.Provider>
+  );
+}
