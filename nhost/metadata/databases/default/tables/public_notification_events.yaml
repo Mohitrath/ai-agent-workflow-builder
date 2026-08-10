@@ -1,0 +1,25 @@
+table:
+  schema: public
+  name: notification_events
+object_relationships:
+  - name: workflow_run
+    using: {foreign_key_constraint_on: workflow_run_id}
+  - name: step_run
+    using: {foreign_key_constraint_on: step_run_id}
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, workflow_run_id, step_run_id, channel, payload, delivered, delivered_at, created_at]
+      filter:
+        workflow_run:
+          organization:
+            org_members:
+              user_id: {_eq: X-Hasura-User-Id}
+event_triggers:
+  - name: notify_step_created
+    definition:
+      enable_manual: false
+      insert:
+        columns: "*"
+    retry_conf: {num_retries: 3, interval_sec: 10, timeout_sec: 30}
+    webhook_from_env: NHOST_FUNCTIONS_SEND_NOTIFICATION_URL

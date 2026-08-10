@@ -1,0 +1,14 @@
+[global]
+name = "ai-workflow-builder"
+
+[hasura]
+version = "v2.40.0"
+adminSecret = "{{ secrets.NHOST_ADMIN_SECRET }}"
+
+[functions]
+[functions.node]
+version = 18
+
+[auth]
+[auth.method.emailPassword]
+hibpEnabled = false

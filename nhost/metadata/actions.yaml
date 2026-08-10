@@ -1,0 +1,32 @@
+actions:
+  - name: triggerWorkflowRun
+    definition:
+      kind: synchronous
+      handler: "{{NHOST_FUNCTIONS_TRIGGER_WORKFLOW_RUN_URL}}"
+      forward_client_headers: true
+      headers:
+        - name: x-hasura-admin-secret
+          value_from_env: NHOST_ADMIN_SECRET
+      timeout: 60
+    permissions:
+      - role: user
+  - name: approveStep
+    definition:
+      kind: synchronous
+      handler: "{{NHOST_FUNCTIONS_APPROVE_STEP_URL}}"
+      forward_client_headers: true
+      headers:
+        - name: x-hasura-admin-secret
+          value_from_env: NHOST_ADMIN_SECRET
+      timeout: 30
+    permissions:
+      - role: user
+custom_types:
+  enums: []
+  input_objects:
+    - name: TriggerWorkflowRunInput
+    - name: ApproveStepInput
+  objects:
+    - name: TriggerWorkflowRunOutput
+    - name: ApproveStepOutput
+  scalars: []

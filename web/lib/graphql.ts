@@ -1,0 +1,12 @@
+import { nhost } from "./nhost";
+export async function gql<T=any>(query:string,variables:Record<string,any>={}):Promise<T>{const{data,error}=await nhost.graphql.request<T>(query,variables);if(error)throw new Error(JSON.stringify(error));return data as T;}
+export const MY_ORGS=`query MyOrgs { org_members { role organization { id name quota_used quota_limit quota_period_start } } }`;
+export const ORG_WORKFLOWS=`query OrgWorkflows($orgId: uuid!) { workflows(where:{org_id:{_eq:$orgId}},order_by:{created_at:desc}) { id name description is_active avg_run_duration_seconds steps(order_by:{step_order:asc}) { id step_order type name config } triggers { id type config is_enabled } runs(order_by:{created_at:desc},limit:1) { id status started_at completed_at } } }`;
+export const WORKFLOW_RUN_STEPS=`query WorkflowRunSteps($runId: uuid!) { step_runs(where:{workflow_run_id:{_eq:$runId}},order_by:{created_at:asc}) { id status output error attempt_count approved_by workflow_step { step_order name type } } workflow_runs_by_pk(id:$runId) { id status current_step_order } }`;
+export const CREATE_ORG=`mutation CreateOrg($name:String!,$userId:uuid!) { insert_organizations_one(object:{name:$name,org_members:{data:[{user_id:$userId,role:"owner"}]}}) { id name } }`;
+export const CREATE_WORKFLOW=`mutation CreateWorkflow($orgId:uuid!,$name:String!,$description:String) { insert_workflows_one(object:{org_id:$orgId,name:$name,description:$description}) { id name } }`;
+export const SAVE_STEPS=`mutation SaveSteps($workflowId:uuid!,$steps:[workflow_steps_insert_input!]!) { delete_workflow_steps(where:{workflow_id:{_eq:$workflowId}}){affected_rows} insert_workflow_steps(objects:$steps){affected_rows} }`;
+export const ADD_TRIGGER=`mutation AddTrigger($workflowId:uuid!,$type:String!,$config:jsonb!) { insert_workflow_triggers_one(object:{workflow_id:$workflowId,type:$type,config:$config}) { id type config } }`;
+export const TRIGGER_RUN=`mutation TriggerRun($workflowId:uuid!) { triggerWorkflowRun(workflow_id:$workflowId){run_id status} }`;
+export const APPROVE_STEP=`mutation ApproveStep($stepRunId:uuid!,$approved:Boolean!,$comment:String) { approveStep(step_run_id:$stepRunId,approved:$approved,comment:$comment){step_run_id workflow_run_id status resumed} }`;
+export const STEP_RUNS_SUBSCRIPTION=`subscription StepRuns($runId:uuid!) { step_runs(where:{workflow_run_id:{_eq:$runId}},order_by:{created_at:asc}) { id status output error attempt_count approved_by workflow_step { step_order name type } } workflow_runs_by_pk(id:$runId){status current_step_order} }`;

@@ -1,0 +1,17 @@
+table:
+  schema: public
+  name: workflow_data
+object_relationships:
+  - name: workflow_run
+    using: {foreign_key_constraint_on: workflow_run_id}
+  - name: step_run
+    using: {foreign_key_constraint_on: step_run_id}
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, workflow_run_id, step_run_id, data, created_at]
+      filter:
+        workflow_run:
+          organization:
+            org_members:
+              user_id: {_eq: X-Hasura-User-Id}

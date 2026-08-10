@@ -1,0 +1,5 @@
+type TriggerWorkflowRunOutput { run_id: uuid! status: String! }
+type ApproveStepOutput { step_run_id: uuid! workflow_run_id: uuid! status: String! resumed: Boolean! }
+input TriggerWorkflowRunInput { workflow_id: uuid! }
+input ApproveStepInput { step_run_id: uuid! approved: Boolean! comment: String }
+type Mutation { triggerWorkflowRun(workflow_id: uuid!): TriggerWorkflowRunOutput approveStep(step_run_id: uuid!, approved: Boolean!, comment: String): ApproveStepOutput }

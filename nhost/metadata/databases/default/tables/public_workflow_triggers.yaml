@@ -1,0 +1,60 @@
+table:
+  schema: public
+  name: workflow_triggers
+object_relationships:
+  - name: workflow
+    using: {foreign_key_constraint_on: workflow_id}
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, workflow_id, type, config, is_enabled, created_at]
+      filter:
+        workflow:
+          organization:
+            org_members:
+              user_id: {_eq: X-Hasura-User-Id}
+insert_permissions:
+  - role: user
+    permission:
+      columns: [workflow_id, type, config, is_enabled]
+      check:
+        _and:
+          - workflow:
+              organization:
+                org_members:
+                  user_id: {_eq: X-Hasura-User-Id}
+                  role: {_in: [owner, editor]}
+          - _or:
+              - type: {_nin: [webhook]}
+              - workflow:
+                  organization:
+                    org_members:
+                      user_id: {_eq: X-Hasura-User-Id}
+                      role: {_eq: owner}
+update_permissions:
+  - role: user
+    permission:
+      columns: [config, is_enabled]
+      filter:
+        workflow:
+          organization:
+            org_members:
+              user_id: {_eq: X-Hasura-User-Id}
+              role: {_in: [owner, editor]}
+      check:
+        _or:
+          - type: {_nin: [webhook]}
+          - workflow:
+              organization:
+                org_members:
+                  user_id: {_eq: X-Hasura-User-Id}
+                  role: {_eq: owner}
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        workflow:
+          organization:
+            org_members:
+              user_id: {_eq: X-Hasura-User-Id}
+              role: {_in: [owner, editor]}

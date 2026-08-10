@@ -1,0 +1,11 @@
+table:
+  schema: public
+  name: watched_table_events
+event_triggers:
+  - name: watched_row_changed
+    definition:
+      enable_manual: false
+      insert:
+        columns: "*"
+    retry_conf: {num_retries: 3, interval_sec: 10, timeout_sec: 30}
+    webhook_from_env: NHOST_FUNCTIONS_DATABASE_EVENT_URL

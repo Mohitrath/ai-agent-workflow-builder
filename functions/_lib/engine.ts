@@ -1,0 +1,35 @@
+import { gqlAdmin } from "./db";
+import { callLlmWithRetry } from "./llm";
+import { callHttpWithRetry } from "./http";
+type StepType = "llm_call" | "http_request" | "db_write" | "notify" | "conditional_branch" | "approval_gate";
+type WorkflowStep = { id: string; step_order: number; type: StepType; name: string; config: any };
+function getPath(obj: any, path?: string): any { if (!path) return obj; return path.split(".").reduce((acc, key) => (acc == null ? undefined : acc[key]), obj); }
+function evalCondition(output: any, condition: { path?: string; operator: string; value: any }): boolean { const actual = getPath(output, condition.path); switch (condition.operator) { case "eq": return actual === condition.value; case "neq": return actual !== condition.value; case "contains": return typeof actual === "string" && actual.includes(String(condition.value)); case "gt": return Number(actual) > Number(condition.value); case "lt": return Number(actual) < Number(condition.value); case "truthy": return Boolean(actual); default: return false; } }
+function renderTemplate(input: any, previousOutput: any): any { const json = JSON.stringify(input).replace(/"\{\{previous_output\}\}"/g, JSON.stringify(previousOutput ?? null)); return JSON.parse(json); }
+export async function createRun(params: { workflowId: string; orgId: string; triggeredBy: string | null; triggerType: string }): Promise<{ runId: string; steps: WorkflowStep[] }> {
+  const stepsData = await gqlAdmin<{ workflow_steps: WorkflowStep[] }>(`query ($workflowId: uuid!) { workflow_steps(where: { workflow_id: { _eq: $workflowId } }, order_by: { step_order: asc }) { id step_order type name config } }`, { workflowId: params.workflowId });
+  const steps = stepsData.workflow_steps;
+  const runData = await gqlAdmin<{ insert_workflow_runs_one: { id: string } }>(`mutation ($workflowId: uuid!, $orgId: uuid!, $triggeredBy: uuid, $triggerType: String!, $steps: [step_runs_insert_input!]!) { insert_workflow_runs_one(object: { workflow_id: $workflowId, org_id: $orgId, status: "running", trigger_type: $triggerType, triggered_by: $triggeredBy, started_at: "now()", step_runs: { data: $steps } }) { id } }`, { workflowId: params.workflowId, orgId: params.orgId, triggeredBy: params.triggeredBy, triggerType: params.triggerType, steps: steps.map((s) => ({ workflow_step_id: s.id, status: "pending" })) });
+  return { runId: runData.insert_workflow_runs_one.id, steps };
+}
+async function updateStepRun(runId: string, stepId: string, patch: Record<string, any>) { await gqlAdmin(`mutation ($runId: uuid!, $stepId: uuid!, $patch: step_runs_set_input!) { update_step_runs(where: { workflow_run_id: { _eq: $runId }, workflow_step_id: { _eq: $stepId } }, _set: $patch) { affected_rows } }`, { runId, stepId, patch }); }
+async function updateRun(runId: string, patch: Record<string, any>) { await gqlAdmin(`mutation ($runId: uuid!, $patch: workflow_runs_set_input!) { update_workflow_runs_by_pk(pk_columns: { id: $runId }, _set: $patch) { id } }`, { runId, patch }); }
+async function incrementOrgQuota(orgId: string) { await gqlAdmin(`mutation ($orgId: uuid!) { update_organizations_by_pk(pk_columns: { id: $orgId }, _inc: { quota_used: 1 }) { id } }`, { orgId }); }
+export async function runSteps(params: { runId: string; orgId: string; steps: WorkflowStep[]; startIndex: number; previousOutput: any }): Promise<"completed" | "failed" | "paused"> {
+  const { runId, orgId, steps } = params; let previousOutput = params.previousOutput; let i = params.startIndex;
+  while (i < steps.length) {
+    const step = steps[i]; await updateStepRun(runId, step.id, { status: "running", started_at: "now()", input: previousOutput ?? {} }); await updateRun(runId, { current_step_order: step.step_order });
+    try {
+      switch (step.type) {
+        case "llm_call": { const cfg = renderTemplate(step.config, previousOutput); const prompt = typeof cfg.prompt === "string" ? cfg.prompt : JSON.stringify(previousOutput); const { result, attempts } = await callLlmWithRetry(prompt, cfg.system_prompt, 2); previousOutput = { text: result.text }; await updateStepRun(runId, step.id, { status: "succeeded", output: previousOutput, attempt_count: attempts, completed_at: "now()" }); break; }
+        case "http_request": { const cfg = renderTemplate(step.config, previousOutput); const { result, attempts } = await callHttpWithRetry(cfg, 2); previousOutput = result; await updateStepRun(runId, step.id, { status: "succeeded", output: previousOutput, attempt_count: attempts, completed_at: "now()" }); break; }
+        case "db_write": { const r = await gqlAdmin<{ step_runs: { id: string }[] }>(`query ($runId: uuid!, $stepId: uuid!) { step_runs(where: { workflow_run_id: { _eq: $runId }, workflow_step_id: { _eq: $stepId } }, limit: 1) { id } }`, { runId, stepId: step.id }); const stepRunId = r.step_runs[0].id; await gqlAdmin(`mutation ($runId: uuid!, $stepRunId: uuid!, $data: jsonb!) { insert_workflow_data_one(object: { workflow_run_id: $runId, step_run_id: $stepRunId, data: $data }) { id } }`, { runId, stepRunId, data: previousOutput ?? {} }); await updateStepRun(runId, step.id, { status: "succeeded", output: previousOutput, completed_at: "now()" }); break; }
+        case "notify": { const r = await gqlAdmin<{ step_runs: { id: string }[] }>(`query ($runId: uuid!, $stepId: uuid!) { step_runs(where: { workflow_run_id: { _eq: $runId }, workflow_step_id: { _eq: $stepId } }, limit: 1) { id } }`, { runId, stepId: step.id }); const cfg = renderTemplate(step.config, previousOutput); await gqlAdmin(`mutation ($runId: uuid!, $stepRunId: uuid!, $channel: String!, $payload: jsonb!) { insert_notification_events_one(object: { workflow_run_id: $runId, step_run_id: $stepRunId, channel: $channel, payload: $payload }) { id } }`, { runId, stepRunId: r.step_runs[0].id, channel: cfg.channel || "slack", payload: { message: cfg.message, previousOutput } }); await updateStepRun(runId, step.id, { status: "succeeded", output: previousOutput, completed_at: "now()" }); break; }
+        case "conditional_branch": { const cfg = step.config; const passed = evalCondition(previousOutput, cfg.condition); await updateStepRun(runId, step.id, { status: "succeeded", output: { condition_passed: passed }, completed_at: "now()" }); if (!passed && cfg.jump_to_step_order != null) { const targetIndex = steps.findIndex((s) => s.step_order === cfg.jump_to_step_order); if (targetIndex > i) { for (let skip = i + 1; skip < targetIndex; skip++) await updateStepRun(runId, steps[skip].id, { status: "skipped" }); i = targetIndex - 1; } } break; }
+        case "approval_gate": { await updateStepRun(runId, step.id, { status: "paused" }); await updateRun(runId, { status: "paused", current_step_order: step.step_order }); return "paused"; }
+      }
+    } catch (err: any) { await updateStepRun(runId, step.id, { status: "failed", error: String(err?.message || err), completed_at: "now()" }); await updateRun(runId, { status: "failed", completed_at: "now()" }); return "failed"; }
+    i++;
+  }
+  await updateRun(runId, { status: "completed", completed_at: "now()" }); await incrementOrgQuota(orgId); return "completed";
+}

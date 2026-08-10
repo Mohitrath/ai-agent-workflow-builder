@@ -1,0 +1,69 @@
+table:
+  schema: public
+  name: workflow_steps
+object_relationships:
+  - name: workflow
+    using: {foreign_key_constraint_on: workflow_id}
+array_relationships:
+  - name: step_runs
+    using: {foreign_key_constraint_on: {column: workflow_step_id, table: {schema: public, name: step_runs}}}
+select_permissions:
+  - role: user
+    permission:
+      columns: [id, workflow_id, step_order, type, name, config, created_at]
+      filter:
+        workflow:
+          organization:
+            org_members:
+              user_id: {_eq: X-Hasura-User-Id}
+insert_permissions:
+  - role: user
+    permission:
+      columns: [workflow_id, step_order, type, name, config]
+      check:
+        _and:
+          - workflow:
+              organization:
+                org_members:
+                  user_id: {_eq: X-Hasura-User-Id}
+                  role: {_in: [owner, editor]}
+          - _or:
+              - type: {_nin: [db_write, notify]}
+              - workflow:
+                  organization:
+                    org_members:
+                      user_id: {_eq: X-Hasura-User-Id}
+                      role: {_eq: owner}
+update_permissions:
+  - role: user
+    permission:
+      columns: [step_order, type, name, config]
+      filter:
+        workflow:
+          organization:
+            org_members:
+              user_id: {_eq: X-Hasura-User-Id}
+              role: {_in: [owner, editor]}
+      check:
+        _and:
+          - workflow:
+              organization:
+                org_members:
+                  user_id: {_eq: X-Hasura-User-Id}
+                  role: {_in: [owner, editor]}
+          - _or:
+              - type: {_nin: [db_write, notify]}
+              - workflow:
+                  organization:
+                    org_members:
+                      user_id: {_eq: X-Hasura-User-Id}
+                      role: {_eq: owner}
+delete_permissions:
+  - role: user
+    permission:
+      filter:
+        workflow:
+          organization:
+            org_members:
+              user_id: {_eq: X-Hasura-User-Id}
+              role: {_in: [owner, editor]}

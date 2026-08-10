@@ -1,0 +1,12 @@
+- name: scheduled_workflow_runner
+  webhook: "{{NHOST_FUNCTIONS_SCHEDULED_RUNNER_URL}}"
+  schedule: "* * * * *"
+  include_in_metadata: true
+  payload: {}
+  headers:
+    - name: x-hasura-admin-secret
+      value_from_env: NHOST_ADMIN_SECRET
+  retry_conf:
+    num_retries: 1
+    timeout_sec: 60
+    tolerance_sec: 21600
